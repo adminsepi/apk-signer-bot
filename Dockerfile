@@ -5,7 +5,14 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-RUN apt-get update && apt-get install -y openjdk-11-jdk wget unzip
+# به‌روزرسانی مخازن و نصب پکیج‌ها با خطایابی بهتر
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openjdk-11-jdk \
+    wget \
+    unzip \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV ANDROID_HOME /opt/android-sdk
 RUN mkdir -p $ANDROID_HOME/cmdline-tools && \
     wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O tools.zip && \
