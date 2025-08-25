@@ -1,15 +1,18 @@
-FROM python:3.8.10-slim-bullseye
+FROM python:3.8-slim
 
 WORKDIR /app
 
-# نصب dependencies سیستم
+# ابتدا requirements را کپی و نصب کن
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# سپس بقیه موارد را نصب کن
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     wget \
     unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# نصب Android SDK
 ENV ANDROID_HOME /opt/android-sdk
 RUN mkdir -p $ANDROID_HOME/cmdline-tools && \
     wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O tools.zip && \
@@ -19,16 +22,10 @@ RUN mkdir -p $ANDROID_HOME/cmdline-tools && \
 
 ENV PATH $PATH:$ANDROID_HOME/cmdline-tools/latest/bin
 
-# نصب build-tools
 RUN mkdir -p /root/.android && touch /root/.android/repositories.cfg
 RUN yes | sdkmanager --licenses --sdk_root=$ANDROID_HOME && \
     sdkmanager "build-tools;33.0.0" --sdk_root=$ANDROID_HOME
 
-# نصب پکیج‌های پایتون
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# کپی سورس کد
 COPY . .
 
 CMD ["python", "main.py"]
