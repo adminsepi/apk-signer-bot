@@ -3,7 +3,6 @@ import subprocess
 import time
 import base64
 import logging
-import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
@@ -28,70 +27,21 @@ KEYSTORE_BASE64 = "MIIKzAIBAzCCCnYGCSqGSIb3DQEHAaCCCmcEggpjMIIKXzCCBbYGCSqGSIb3D
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# تابع برای بررسی وجود ابزارهای لازم
+# بررسی وجود ابزارهای لازم
 def check_tools():
-    tools = ["zipalign", "apksigner"]
-    missing_tools = []
-    
-    for tool in tools:
-        try:
-            subprocess.run([tool, "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            missing_tools.append(tool)
-    
-    return missing_tools
-
-# تابع برای نصب ابزارهای لازم
-def install_android_tools():
     try:
-        # آپدیت سیستم
-        subprocess.run(["apt-get", "update"], check=True)
+        # بررسی zipalign
+        subprocess.run(["zipalign", "--help"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         
-        # نصب JDK
-        subprocess.run(["apt-get", "install", "-y", "openjdk-11-jdk"], check=True)
-        
-        # دانلود و نصب Android Command Line Tools
-        os.makedirs("/opt/android-sdk", exist_ok=True)
-        subprocess.run(["wget", "https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip", "-O", "/tmp/tools.zip"], check=True)
-        subprocess.run(["unzip", "/tmp/tools.zip", "-d", "/opt/android-sdk"], check=True)
-        subprocess.run(["mv", "/opt/android-sdk/cmdline-tools", "/opt/android-sdk/latest"], check=True)
-        
-        # تنظیم متغیرهای محیطی
-        os.environ["ANDROID_HOME"] = "/opt/android-sdk"
-        os.environ["PATH"] = f"/opt/android-sdk/latest/bin:{os.environ['PATH']}"
-        
-        # قبول لیسانس‌ها
-        subprocess.run(["yes", "|", "/opt/android-sdk/latest/bin/sdkmanager", "--licenses"], check=True)
-        
-        # نصب build-tools
-        subprocess.run(["/opt/android-sdk/latest/bin/sdkmanager", "build-tools;33.0.0"], check=True)
-        
-        # اضافه کردن مسیر build-tools به PATH
-        os.environ["PATH"] = f"/opt/android-sdk/build-tools/33.0.0:{os.environ['PATH']}"
+        # بررسی apksigner
+        subprocess.run(["apksigner", "--help"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         
         return True
-    except Exception as e:
-        logger.error(f"Error installing tools: {e}")
+    except (subprocess.CalledProcessError, FileNotFoundError):
         return False
-
-# بررسی و نصب ابزارها در صورت نیاز
-missing_tools = check_tools()
-if missing_tools:
-    logger.info(f"Missing tools: {missing_tools}. Installing...")
-    if install_android_tools():
-        logger.info("Android tools installed successfully")
-    else:
-        logger.error("Failed to install Android tools")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🤖 ربات امضا و انکریپت APK\n\nفایل APK خود را (حداکثر 20 مگابایت) ارسال کنید.")
-
-async def update_status(message, text):
-    """به روزرسانی پیام وضعیت به جای ارسال پیام جدید"""
-    try:
-        await message.edit_text(text)
-    except Exception as e:
-        logger.error(f"Error updating message: {e}")
 
 async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -124,38 +74,33 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     output_path = None
 
     try:
+        # بررسی ابزارها
+        if not check_tools():
+            await status_message.edit_text("❌ ابزارهای لازم یافت نشد. لطفاً با پشتیبانی تماس بگیرید.")
+            return
+
         # دانلود فایل
         file_path = os.path.join(UPLOAD_DIR, file.file_name)
         file_obj = await file.get_file()
         await file_obj.download_to_drive(file_path)
 
-        # بررسی دوباره ابزارها قبل از پردازش
-        missing_tools = check_tools()
-        if missing_tools:
-            await update_status(status_message, "❌ ابزارهای لازم یافت نشد. در حال نصب...")
-            if not install_android_tools():
-                await update_status(status_message, "❌ خطا در نصب ابزارهای لازم. لطفاً بعداً تلاش کنید.")
-                return
-
         # ویرایش پیام وضعیت
-        await update_status(status_message, f"📥 فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\n🔄 وضعیت: در حال پردازش APK...")
+        await status_message.edit_text(f"📥 فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\n🔄 وضعیت: در حال پردازش APK...")
 
         # پردازش APK
         aligned_path = os.path.join(UPLOAD_DIR, "aligned.apk")
         
         # اجرای zipalign
         try:
-            await update_status(status_message, f"📥 فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\n🔄 وضعیت: در حال پردازش با zipalign...")
             subprocess.run(["zipalign", "-v", "-p", "4", file_path, aligned_path], check=True, timeout=300)
-        except (subprocess.CalledProcessError, FileNotFoundError) as e:
-            await update_status(status_message, "❌ خطا در پردازش فایل! لطفاً بعداً تلاش کنید.")
-            logger.error(f"Zipalign error: {e}")
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            await status_message.edit_text("❌ خطا در پردازش فایل!")
             return
         except subprocess.TimeoutExpired:
-            await update_status(status_message, "❌ زمان پردازش فایل به پایان رسید!")
+            await status_message.edit_text("❌ زمان پردازش فایل به پایان رسید!")
             return
 
-        await update_status(status_message, f"📥 فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\n🔒 وضعیت: در حال انجام فرایند انکریپت...")
+        await status_message.edit_text(f"📥 فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\n🔒 وضعیت: در حال انجام فرایند انکریپت...")
 
         # ایجاد keystore
         with open("keystore.jks", "wb") as f:
@@ -166,7 +111,6 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
         output_path = os.path.join(OUTPUT_DIR, output_filename)
         
         try:
-            await update_status(status_message, f"📥 فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\n🔒 وضعیت: در حال امضای فایل...")
             subprocess.run([
                 "apksigner", "sign",
                 "--ks", "keystore.jks",
@@ -175,15 +119,14 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "--out", output_path,
                 aligned_path
             ], check=True, timeout=300)
-        except (subprocess.CalledProcessError, FileNotFoundError) as e:
-            await update_status(status_message, "❌ خطا در امضای فایل! لطفاً بعداً تلاش کنید.")
-            logger.error(f"Apksigner error: {e}")
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            await status_message.edit_text("❌ خطا در امضای فایل!")
             return
         except subprocess.TimeoutExpired:
-            await update_status(status_message, "❌ زمان امضای فایل به پایان رسید!")
+            await status_message.edit_text("❌ زمان امضای فایل به پایان رسید!")
             return
 
-        await update_status(status_message, f"📥 فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\n✅ وضعیت: در حال ارسال فایل...")
+        await status_message.edit_text(f"📥 فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\n✅ وضعیت: در حال ارسال فایل...")
 
         # ارسال فایل امضا شده
         output_size_mb = os.path.getsize(output_path) / 1024 / 1024
@@ -192,14 +135,14 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
             caption=f"✅ فایل امضا شده با موفقیت!\n📦 حجم فایل خروجی: {output_size_mb:.1f} مگابایت"
         )
         
-        await update_status(status_message, f"📥 فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\n✅ وضعیت: پایان!\n\n🎉 شما می‌توانید 30 دقیقه دیگر فایل جدیدی ارسال کنید.")
+        await status_message.edit_text(f"📥 فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\n✅ وضعیت: پایان!\n\n🎉 شما می‌توانید 30 دقیقه دیگر فایل جدیدی ارسال کنید.")
 
         # بروزرسانی زمان آخرین درخواست
         user_last_request[user_id] = current_time
 
     except Exception as e:
         logger.error(f"Error processing APK: {e}")
-        await update_status(status_message, "❌ خطایی در پردازش فایل رخ داد!")
+        await status_message.edit_text("❌ خطایی در پردازش فایل رخ داد!")
         
     finally:
         # پاکسازی فایل‌های موقت
@@ -207,14 +150,13 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if file_to_remove and os.path.exists(file_to_remove):
                 try:
                     os.remove(file_to_remove)
-                except Exception as e:
-                    logger.error(f"Error removing file {file_to_remove}: {e}")
+                except:
+                    pass
 
 def main():
     # بررسی نهایی ابزارها
-    missing_tools = check_tools()
-    if missing_tools:
-        logger.warning(f"Still missing tools after installation attempt: {missing_tools}")
+    if not check_tools():
+        logger.error("Required tools are not available!")
     
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
