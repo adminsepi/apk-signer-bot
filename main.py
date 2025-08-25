@@ -70,6 +70,10 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # اجرای zipalign
         try:
             subprocess.run(["zipalign", "-v", "-p", "4", file_path, aligned_path], check=True, timeout=300)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            await status_message.edit_text("❌ خطا: ابزار zipalign پیدا نشد یا خطایی رخ داد!")
+            os.remove(file_path)
+            return
         except subprocess.TimeoutExpired:
             await status_message.edit_text("❌ خطا: زمان پردازش فایل به پایان رسید!")
             os.remove(file_path)
@@ -94,6 +98,11 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "--out", output_path,
                 aligned_path
             ], check=True, timeout=300)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            await status_message.edit_text("❌ خطا: ابزار apksigner پیدا نشد یا خطایی رخ داد!")
+            os.remove(file_path)
+            os.remove(aligned_path)
+            return
         except subprocess.TimeoutExpired:
             await status_message.edit_text("❌ خطا: زمان امضا فایل به پایان رسید!")
             os.remove(file_path)
@@ -121,7 +130,7 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     finally:
         # پاکسازی فایل‌های موقت
         for file_to_remove in [file_path, aligned_path, output_path, "keystore.jks"]:
-            if os.path.exists(file_to_remove):
+            if file_to_remove and os.path.exists(file_to_remove):
                 try:
                     os.remove(file_to_remove)
                 except:
