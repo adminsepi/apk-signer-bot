@@ -27,18 +27,24 @@ KEYSTORE_BASE64 = "MIIKzAIBAzCCCnYGCSqGSIb3DQEHAaCCCmcEggpjMIIKXzCCBbYGCSqGSIb3D
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# بررسی وجود ابزارهای لازم
+# تنظیم مسیر ابزارهای اندروید
+os.environ["ANDROID_HOME"] = "/opt/android-sdk"
+os.environ["PATH"] = f"/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/build-tools/33.0.0:{os.environ['PATH']}"
+
 def check_tools():
-    try:
-        # بررسی zipalign
-        subprocess.run(["zipalign", "--help"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-        
-        # بررسی apksigner
-        subprocess.run(["apksigner", "--help"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-        
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return False
+    """بررسی وجود ابزارهای لازم"""
+    tools = {
+        "zipalign": "/opt/android-sdk/build-tools/33.0.0/zipalign",
+        "apksigner": "/opt/android-sdk/build-tools/33.0.0/apksigner"
+    }
+    
+    for tool_name, tool_path in tools.items():
+        if not os.path.exists(tool_path):
+            logger.error(f"ابزار {tool_name} یافت نشد: {tool_path}")
+            return False
+    
+    logger.info("همه ابزارها با موفقیت یافت شدند")
+    return True
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🤖 ربات امضا و انکریپت APK\n\nفایل APK خود را (حداکثر 20 مگابایت) ارسال کنید.")
@@ -76,7 +82,7 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         # بررسی ابزارها
         if not check_tools():
-            await status_message.edit_text("❌ ابزارهای لازم یافت نشد. لطفاً با پشتیبانی تماس بگیرید.")
+            await status_message.edit_text("❌ ابزارهای لازم یافت نشد. لطفاً بعداً تلاش کنید.")
             return
 
         # دانلود فایل
@@ -92,9 +98,11 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # اجرای zipalign
         try:
-            subprocess.run(["zipalign", "-v", "-p", "4", file_path, aligned_path], check=True, timeout=300)
-        except (subprocess.CalledProcessError, FileNotFoundError):
+            zipalign_cmd = ["/opt/android-sdk/build-tools/33.0.0/zipalign", "-v", "-p", "4", file_path, aligned_path]
+            subprocess.run(zipalign_cmd, check=True, timeout=300)
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
             await status_message.edit_text("❌ خطا در پردازش فایل!")
+            logger.error(f"Zipalign error: {e}")
             return
         except subprocess.TimeoutExpired:
             await status_message.edit_text("❌ زمان پردازش فایل به پایان رسید!")
@@ -111,16 +119,18 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
         output_path = os.path.join(OUTPUT_DIR, output_filename)
         
         try:
-            subprocess.run([
-                "apksigner", "sign",
+            apksigner_cmd = [
+                "/opt/android-sdk/build-tools/33.0.0/apksigner", "sign",
                 "--ks", "keystore.jks",
                 "--ks-key-alias", KEYSTORE_ALIAS,
                 "--ks-pass", f"pass:{KEYSTORE_PASS}",
                 "--out", output_path,
                 aligned_path
-            ], check=True, timeout=300)
-        except (subprocess.CalledProcessError, FileNotFoundError):
+            ]
+            subprocess.run(apksigner_cmd, check=True, timeout=300)
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
             await status_message.edit_text("❌ خطا در امضای فایل!")
+            logger.error(f"Apksigner error: {e}")
             return
         except subprocess.TimeoutExpired:
             await status_message.edit_text("❌ زمان امضای فایل به پایان رسید!")
@@ -155,8 +165,10 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     # بررسی نهایی ابزارها
-    if not check_tools():
-        logger.error("Required tools are not available!")
+    if check_tools():
+        logger.info("همه ابزارها آماده هستند!")
+    else:
+        logger.warning("برخی ابزارها یافت نشدند!")
     
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
