@@ -4,7 +4,7 @@ import time
 import base64
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes
-from telegram.ext.filters import Document  # تغییر از Filters به telegram.ext.filters
+from telegram.ext.filters import Document
 
 UPLOAD_DIR = "uploads"
 OUTPUT_DIR = "outputs"
@@ -80,7 +80,7 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(Document(), handle_apk))  # تغییر Filters.document به Document()
+    app.add_handler(MessageHandler(Document(), handle_apk))
     app.run_polling()  # برای تست محلی، بعد از دیپلوی به webhook برمی‌گردیم
 
 if __name__ == "__main__":
