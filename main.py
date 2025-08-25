@@ -4,7 +4,7 @@ import time
 import base64
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes
-from telegram.ext.filters import Document
+from telegram.ext import filters
 
 UPLOAD_DIR = "uploads"
 OUTPUT_DIR = "outputs"
@@ -31,7 +31,7 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     file = update.message.document
-    if not file or not file.file_name.endswith(".apk"):
+    if not file or not file.file_name.lower().endswith(".apk"):
         await update.message.reply_text("لطفاً فقط فایل APK ارسال کنید!")
         return
 
@@ -42,6 +42,7 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_size_mb = file.file_size / 1024 / 1024
     await update.message.reply_text(f"فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\nوضعیت: در حال دریافت...")
     file_path = os.path.join(UPLOAD_DIR, file.file_name)
+    await update.message.reply_text("دیباگ: ابزارها رو چک می‌کنم...")
     await file.get_file().download_to_drive(file_path)
 
     await update.message.reply_text(f"فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\nوضعیت: در حال پردازش APK...")
@@ -85,7 +86,7 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(Document(), handle_apk))
+    app.add_handler(MessageHandler(filters.Document.FileExtension("apk"), handle_apk))  # اصلاح فیلتر
     app.run_polling()  # برای تست محلی، بعد از دیپلوی به webhook برمی‌گردیم
 
 if __name__ == "__main__":
