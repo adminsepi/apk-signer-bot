@@ -28,23 +28,35 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # تنظیم مسیر ابزارهای اندروید
-os.environ["ANDROID_HOME"] = "/opt/android-sdk"
-os.environ["PATH"] = f"/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/build-tools/33.0.0:{os.environ['PATH']}"
+ANDROID_HOME = os.path.join(os.getcwd(), "android-sdk")
+ZIPALIGN_PATH = os.path.join(ANDROID_HOME, "build-tools", "33.0.0", "zipalign")
+APKSIGNER_PATH = os.path.join(ANDROID_HOME, "build-tools", "33.0.0", "apksigner")
+
+# اضافه کردن به PATH
+os.environ["PATH"] = f"{ANDROID_HOME}/latest/bin:{ANDROID_HOME}/build-tools/33.0.0:{os.environ['PATH']}"
 
 def check_tools():
     """بررسی وجود ابزارهای لازم"""
-    tools = {
-        "zipalign": "/opt/android-sdk/build-tools/33.0.0/zipalign",
-        "apksigner": "/opt/android-sdk/build-tools/33.0.0/apksigner"
-    }
+    tools_available = True
     
-    for tool_name, tool_path in tools.items():
-        if not os.path.exists(tool_path):
-            logger.error(f"ابزار {tool_name} یافت نشد: {tool_path}")
-            return False
+    if not os.path.exists(ZIPALIGN_PATH):
+        logger.error(f"ابزار zipalign یافت نشد: {ZIPALIGN_PATH}")
+        tools_available = False
     
-    logger.info("همه ابزارها با موفقیت یافت شدند")
-    return True
+    if not os.path.exists(APKSIGNER_PATH):
+        logger.error(f"ابزار apksigner یافت نشد: {APKSIGNER_PATH}")
+        tools_available = False
+    
+    if tools_available:
+        logger.info("همه ابزارها با موفقیت یافت شدند")
+        
+        # دادن مجوز اجرا اگر وجود ندارند
+        if not os.access(ZIPALIGN_PATH, os.X_OK):
+            os.chmod(ZIPALIGN_PATH, 0o755)
+        if not os.access(APKSIGNER_PATH, os.X_OK):
+            os.chmod(APKSIGNER_PATH, 0o755)
+    
+    return tools_available
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🤖 ربات امضا و انکریپت APK\n\nفایل APK خود را (حداکثر 20 مگابایت) ارسال کنید.")
@@ -98,7 +110,7 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # اجرای zipalign
         try:
-            zipalign_cmd = ["/opt/android-sdk/build-tools/33.0.0/zipalign", "-v", "-p", "4", file_path, aligned_path]
+            zipalign_cmd = [ZIPALIGN_PATH, "-v", "-p", "4", file_path, aligned_path]
             subprocess.run(zipalign_cmd, check=True, timeout=300)
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             await status_message.edit_text("❌ خطا در پردازش فایل!")
@@ -120,7 +132,7 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         try:
             apksigner_cmd = [
-                "/opt/android-sdk/build-tools/33.0.0/apksigner", "sign",
+                APKSIGNER_PATH, "sign",
                 "--ks", "keystore.jks",
                 "--ks-key-alias", KEYSTORE_ALIAS,
                 "--ks-pass", f"pass:{KEYSTORE_PASS}",
