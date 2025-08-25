@@ -82,12 +82,10 @@ def main():
     app = Application.builder().token(os.getenv("TOKEN")).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_apk))
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=8443,
-        url_path=os.getenv("TOKEN"),
-        webhook_url=f"https://your-render-url/{os.getenv('TOKEN')}"
-    )
+    
+    # استفاده از polling به جای webhook
+    print("Bot is starting...")
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
