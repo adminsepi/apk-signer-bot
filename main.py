@@ -42,8 +42,8 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_size_mb = file.file_size / 1024 / 1024
     await update.message.reply_text(f"فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\nوضعیت: در حال دریافت...")
     file_path = os.path.join(UPLOAD_DIR, file.file_name)
-    await update.message.reply_text("دیباگ: ابزارها رو چک می‌کنم...")
-    await file.get_file().download_to_drive(file_path)
+    file_obj = await file.get_file()  # دریافت فایل
+    await file_obj.download_to_drive(file_path)  # دانلود به مسیر مشخص
 
     await update.message.reply_text(f"فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\nوضعیت: در حال پردازش APK...")
     aligned_path = "aligned.apk"
@@ -86,7 +86,7 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.Document.FileExtension("apk"), handle_apk))  # اصلاح فیلتر
+    app.add_handler(MessageHandler(filters.Document.FileExtension("apk"), handle_apk))
     app.run_polling()  # برای تست محلی، بعد از دیپلوی به webhook برمی‌گردیم
 
 if __name__ == "__main__":
