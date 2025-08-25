@@ -39,10 +39,12 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("حجم فایل بیش از 20 مگابایت است!")
         return
 
-    await update.message.reply_text(f"فایل APK شما به حجم {file.file_size / 1024 / 1024:.1f} مگابایت دریافت شد\nوضعیت: در حال پردازش...")
+    file_size_mb = file.file_size / 1024 / 1024
+    await update.message.reply_text(f"فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\nوضعیت: در حال دریافت...")
     file_path = os.path.join(UPLOAD_DIR, file.file_name)
     await file.get_file().download_to_drive(file_path)
 
+    await update.message.reply_text(f"فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\nوضعیت: در حال پردازش APK...")
     aligned_path = "aligned.apk"
     try:
         subprocess.run(["zipalign", "-v", "-p", "4", file_path, aligned_path], check=True)
@@ -51,6 +53,7 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
         os.remove(file_path)
         return
 
+    await update.message.reply_text(f"فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\nوضعیت: در حال انجام فرایند انکریپت...")
     output_path = os.path.join(OUTPUT_DIR, f"signed_{file.file_name}")
     try:
         with open("keystore.jks", "wb") as f:
@@ -69,6 +72,8 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
         os.remove(aligned_path)
         return
 
+    await update.message.reply_text(f"فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\nوضعیت: در حال امضای فایل...")
+    await update.message.reply_text(f"فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\nوضعیت: در حال ارسال فایل...")
     await update.message.reply_document(open(output_path, "rb"), caption="فایل امضا شده با موفقیت!")
     await update.message.reply_text("پایان! 30 دقیقه دیگه می‌تونی فایل جدید بفرستی.")
 
