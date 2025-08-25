@@ -1,8 +1,8 @@
-FROM python:3.8-slim
+FROM python:3.8.10-slim-bullseye
 
 WORKDIR /app
 
-# ابتدا سیستم را به روز کنید و وابستگی‌های ضروری را نصب کنید
+# نصب dependencies سیستم
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     wget \
@@ -19,16 +19,16 @@ RUN mkdir -p $ANDROID_HOME/cmdline-tools && \
 
 ENV PATH $PATH:$ANDROID_HOME/cmdline-tools/latest/bin
 
-# نصب build-tools و قبول licenses
+# نصب build-tools
 RUN mkdir -p /root/.android && touch /root/.android/repositories.cfg
 RUN yes | sdkmanager --licenses --sdk_root=$ANDROID_HOME && \
     sdkmanager "build-tools;33.0.0" --sdk_root=$ANDROID_HOME
 
-# کپی requirements و نصب پکیج‌های پایتون
+# نصب پکیج‌های پایتون
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# کپی کردن سورس کد
+# کپی سورس کد
 COPY . .
 
 CMD ["python", "main.py"]
