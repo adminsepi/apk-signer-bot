@@ -3,7 +3,8 @@ import subprocess
 import time
 import base64
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, Filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes
+from telegram.ext.filters import Document  # تغییر از Filters به telegram.ext.filters
 
 UPLOAD_DIR = "uploads"
 OUTPUT_DIR = "outputs"
@@ -30,7 +31,7 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     file = update.message.document
-    if not file.file_name.endswith(".apk"):
+    if not file or not file.file_name.endswith(".apk"):
         await update.message.reply_text("لطفاً فقط فایل APK ارسال کنید!")
         return
 
@@ -38,21 +39,18 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("حجم فایل بیش از 20 مگابایت است!")
         return
 
-    await update.message.reply_text(f"فایل APK شما به حجم {file.file_size / 1024 / 1024:.1f} مگابایت دریافت شد\nوضعیت: در حال انجام فرایند...")
-    new_file = await file.get_file()
+    await update.message.reply_text(f"فایل APK شما به حجم {file.file_size / 1024 / 1024:.1f} مگابایت دریافت شد\nوضعیت: در حال پردازش...")
     file_path = os.path.join(UPLOAD_DIR, file.file_name)
-    await new_file.download_to_drive(file_path)
+    await file.get_file().download_to_drive(file_path)
 
-    await update.message.reply_text("وضعیت: در حال بهینه‌سازی فایل...")
     aligned_path = "aligned.apk"
     try:
         subprocess.run(["zipalign", "-v", "-p", "4", file_path, aligned_path], check=True)
-    except subprocess.CalledProcessError:
-        await update.message.reply_text("خطا در بهینه‌سازی فایل!")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        await update.message.reply_text("خطا: ابزار zipalign پیدا نشد یا خطایی رخ داد!")
         os.remove(file_path)
         return
 
-    await update.message.reply_text("وضعیت: در حال امضای فایل...")
     output_path = os.path.join(OUTPUT_DIR, f"signed_{file.file_name}")
     try:
         with open("keystore.jks", "wb") as f:
@@ -65,33 +63,25 @@ async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "--out", output_path,
             aligned_path
         ], check=True)
-    except subprocess.CalledProcessError:
-        await update.message.reply_text("خطا در امضای فایل!")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        await update.message.reply_text("خطا: ابزار apksigner پیدا نشد یا خطایی رخ داد!")
         os.remove(file_path)
         os.remove(aligned_path)
         return
 
-    await update.message.reply_text("وضعیت: در حال ارسال ✅")
-    with open(output_path, "rb") as signed_file:
-        await update.message.reply_document(signed_file, caption="فایل امضا شده با موفقیت!")
-    await update.message.reply_text("پایان! می‌توانید 30 دقیقه دیگر فایل جدیدی ارسال کنید.")
+    await update.message.reply_document(open(output_path, "rb"), caption="فایل امضا شده با موفقیت!")
+    await update.message.reply_text("پایان! 30 دقیقه دیگه می‌تونی فایل جدید بفرستی.")
 
     user_last_request[user_id] = current_time
-    os.remove(file_path)
-    os.remove(aligned_path)
-    os.remove(output_path)
-    os.remove("keystore.jks")
+    for file_to_remove in [file_path, aligned_path, output_path, "keystore.jks"]:
+        if os.path.exists(file_to_remove):
+            os.remove(file_to_remove)
 
 def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(Filters.document, handle_apk))
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=8443,
-        url_path=TOKEN,
-        webhook_url=f"https://your-render-url/{TOKEN}"
-    )
+    app.add_handler(MessageHandler(Document(), handle_apk))  # تغییر Filters.document به Document()
+    app.run_polling()  # برای تست محلی، بعد از دیپلوی به webhook برمی‌گردیم
 
 if __name__ == "__main__":
     main()
