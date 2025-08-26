@@ -1,107 +1,209 @@
+# -*- coding: utf-8 -*-
+# app.py - Telegram APK signer bot (Python 3.9.7 compatible)
+
 import os
-import subprocess
 import time
 import base64
 import logging
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+import tempfile
+import shutil
+import subprocess
+from typing import Optional
 
-# تنظیمات لاگ
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler,
+    CallbackQueryHandler, ContextTypes, filters
 )
-logger = logging.getLogger(__name__)
 
-# پیکربندی
-UPLOAD_DIR = "uploads"
-OUTPUT_DIR = "outputs"
-COOLDOWN = 30 * 60
-user_last_request = {}
-TOKEN = "7569529571:AAFxyFyv-vcosc-VpdkwUqA-pR-uiNHHZkE"
-KEYSTORE_PASS = "mysecretpassword"
+# =========[ تنظیمات ثابت – طبق خواسته شما داخل سورس ]=========
+BOT_TOKEN = "7569529571:AAFxyFyv-vcosc-VpdkwUqA-pR-uiNHHZkE"
+KEYSTORE_BASE64 = """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"""
+KEYSTORE_PASS = "android123"
 KEYSTORE_ALIAS = "alias_name"
-KEYSTORE_BASE64 = "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"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("فایل APK خود را (حداکثر 20 مگابایت) ارسال کنید.")
+# =========[ تنظیمات دیگر ]=========
+MAX_FILE_MB = 20
+COOLDOWN_SEC = 30 * 60  # 30 دقیقه
 
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger("apk-signer-bot")
+
+user_last_request = {}
+
+# ---------------- UI ----------------
+def main_menu() -> InlineKeyboardMarkup:
+    keyboard = [
+        [InlineKeyboardButton("📂 ارسال فایل APK", callback_data="upload_apk")],
+        [InlineKeyboardButton("ℹ️ راهنما", callback_data="help")],
+        [InlineKeyboardButton("🧪 تست ابزارها", callback_data="check_tools")],
+        [InlineKeyboardButton("❌ خروج", callback_data="exit")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    await update.message.reply_text(
+        f"سلام {user.first_name} 👋\nبه ربات امضاکننده APK خوش اومدی.\nاز منو یکی رو انتخاب کن:",
+        reply_markup=main_menu()
+    )
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "upload_apk":
+        await query.edit_message_text(f"📂 لطفاً فایل APK خود را ارسال کنید (≤ {MAX_FILE_MB}MB).")
+    elif query.data == "help":
+        await query.edit_message_text(
+            "راهنما:\n"
+            f"• فایل APK (≤ {MAX_FILE_MB}MB) بفرست.\n"
+            "• ربات zipalign و با keystore شما امضا می‌کند.\n"
+            f"• محدودیت ارسال: هر {COOLDOWN_SEC//60} دقیقه یک‌بار.\n",
+            reply_markup=main_menu()
+        )
+    elif query.data == "check_tools":
+        ok, msg = await check_tools_message()
+        await query.edit_message_text(msg, reply_markup=main_menu())
+    elif query.data == "exit":
+        await query.edit_message_text("❌ منو بسته شد.")
+
+# --------------- ابزارها ---------------
+def which(cmd: str) -> Optional[str]:
+    return shutil.which(cmd)
+
+def ensure_android_tools_available() -> None:
+    if not which("zipalign"):
+        raise FileNotFoundError("zipalign در PATH یافت نشد.")
+    if not which("apksigner"):
+        raise FileNotFoundError("apksigner در PATH یافت نشد.")
+
+async def check_tools_message():
+    try:
+        ensure_android_tools_available()
+        # sanity run
+        subprocess.run(["zipalign", "-h"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        subprocess.run(["apksigner"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        # keystore decode test
+        tmp = tempfile.mkdtemp(prefix="ks_")
+        try:
+            write_keystore_from_base64(os.path.join(tmp, "keystore.jks"))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        return True, "✅ ابزارها و keystore آماده‌اند (zipalign/apksigner/keystore OK)."
+    except Exception as e:
+        return False, f"❌ مشکل در آماده‌سازی: {e}"
+
+def write_keystore_from_base64(dest_path: str) -> None:
+    try:
+        raw = base64.b64decode(KEYSTORE_BASE64)
+        with open(dest_path, "wb") as f:
+            f.write(raw)
+    except Exception as e:
+        raise RuntimeError(f"خطا در ساخت keystore از base64: {e}")
+
+def run_cmd(args, cwd=None) -> None:
+    p = subprocess.run(args, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if p.returncode != 0:
+        out = p.stdout or ""
+        raise RuntimeError(f"خطا در اجرای {' '.join(args)}:\n{out[:4000]}")
+
+# --------------- هندل APK ---------------
 async def handle_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    current_time = time.time()
-
-    if user_id in user_last_request and (current_time - user_last_request[user_id]) < COOLDOWN:
-        remaining = int(COOLDOWN - (current_time - user_last_request[user_id]))
-        await update.message.reply_text(f"لطفاً {remaining // 60} دقیقه و {remaining % 60} ثانیه صبر کنید.")
+    # محدودیت زمانی هر کاربر
+    user_id = update.effective_user.id
+    now = time.time()
+    last = user_last_request.get(user_id)
+    if last and now - last < COOLDOWN_SEC:
+        remain = int(COOLDOWN_SEC - (now - last))
+        await update.message.reply_text(f"⏳ لطفاً {remain//60} دقیقه و {remain%60} ثانیه دیگر تلاش کنید.")
         return
 
-    file = update.message.document
-    if not file or not file.file_name.lower().endswith(".apk"):
-        await update.message.reply_text("لطفاً فقط فایل APK ارسال کنید!")
+    doc = update.message.document
+    if not doc or not doc.file_name.lower().endswith(".apk"):
+        await update.message.reply_text("⚠️ لطفاً فقط فایل‌های APK ارسال کنید.")
         return
 
-    if file.file_size > 20 * 1024 * 1024:
-        await update.message.reply_text("حجم فایل بیش از 20 مگابایت است!")
+    if doc.file_size and doc.file_size > MAX_FILE_MB * 1024 * 1024:
+        await update.message.reply_text(f"⚠️ حجم فایل بیش از {MAX_FILE_MB}MB است.")
         return
 
-    file_size_mb = file.file_size / 1024 / 1024
-    status_message = await update.message.reply_text(f"فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\nوضعیت: در حال دریافت...")
-    
-    file_path = os.path.join(UPLOAD_DIR, file.file_name)
-    file_obj = await file.get_file()
-    await file_obj.download_to_drive(file_path)
+    size_mb = (doc.file_size or 0) / (1024 * 1024)
+    status = await update.message.reply_text(
+        f"فایل دریافت شد: [{size_mb:.1f} MB]\n"
+        "وضعیت: در حال دریافت فایل..."
+    )
 
-    await status_message.edit_text(f"فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\nوضعیت: در حال پردازش APK...")
-    
-    aligned_path = "aligned.apk"
+    tmpdir = tempfile.mkdtemp(prefix="apk_")
+    keystore_path = os.path.join(tmpdir, "keystore.jks")
+    input_apk = os.path.join(tmpdir, doc.file_name)
+    aligned_apk = os.path.join(tmpdir, "aligned.apk")
+    signed_apk = os.path.join(tmpdir, f"signed_{doc.file_name}")
+
     try:
-        subprocess.run(["/opt/android-sdk/build-tools/33.0.0/zipalign", "-v", "-p", "4", file_path, aligned_path], check=True)
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        logger.error(f"خطا در اجرای zipalign: {e}")
-        await status_message.edit_text("خطا: ابزار zipalign پیدا نشد یا خطایی رخ داد!")
-        os.remove(file_path)
-        return
+        ensure_android_tools_available()
 
-    await status_message.edit_text(f"فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\nوضعیت: در حال انجام فرایند انکریپت...")
-    
-    output_path = os.path.join(OUTPUT_DIR, f"signed_{file.file_name}")
-    try:
-        with open("keystore.jks", "wb") as f:
-            f.write(base64.b64decode(KEYSTORE_BASE64))
-        subprocess.run([
-            "/opt/android-sdk/build-tools/33.0.0/apksigner",
-            "sign",
-            "--ks", "keystore.jks",
+        tg_file = await doc.get_file()
+        await tg_file.download_to_drive(input_apk)
+
+        await status.edit_text(f"فایل دریافت شد: [{size_mb:.1f} MB]\nوضعیت: ساخت keystore...")
+        write_keystore_from_base64(keystore_path)
+
+        await status.edit_text(f"فایل دریافت شد: [{size_mb:.1f} MB]\nوضعیت: zipalign...")
+        run_cmd(["zipalign", "-v", "-p", "4", input_apk, aligned_apk])
+
+        await status.edit_text(f"فایل دریافت شد: [{size_mb:.1f} MB]\nوضعیت: امضا با apksigner...")
+        run_cmd([
+            "apksigner", "sign",
+            "--ks", keystore_path,
             "--ks-key-alias", KEYSTORE_ALIAS,
             "--ks-pass", f"pass:{KEYSTORE_PASS}",
-            "--out", output_path,
-            aligned_path
-        ], check=True)
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        logger.error(f"خطا در اجرای apksigner: {e}")
-        await status_message.edit_text("خطا: ابزار apksigner پیدا نشد یا خطایی رخ داد!")
-        os.remove(file_path)
-        os.remove(aligned_path)
-        return
+            "--out", signed_apk,
+            aligned_apk
+        ])
 
-    await status_message.edit_text(f"فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\nوضعیت: در حال امضای فایل...")
-    await status_message.edit_text(f"فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\nوضعیت: در حال ارسال فایل...")
-    
-    await update.message.reply_document(open(output_path, "rb"), caption="فایل امضا شده با موفقیت!")
-    await status_message.edit_text(f"فایل APK شما به حجم [{file_size_mb:.1f} مگابایت] دریافت شد\nوضعیت: پایان!\n\nشما می‌توانید 30 دقیقه دیگر فایل جدیدی ارسال کنید.")
+        # (اختیاری) تأیید امضا
+        verify = subprocess.run(
+            ["apksigner", "verify", "--verbose", "--print-certs", signed_apk],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        )
+        logger.info("apksigner verify output:\n%s", verify.stdout)
 
-    user_last_request[user_id] = current_time
-    for file_to_remove in [file_path, aligned_path, output_path, "keystore.jks"]:
-        if os.path.exists(file_to_remove):
-            os.remove(file_to_remove)
+        await status.edit_text("وضعیت: ارسال فایل امضا شده...")
+        with open(signed_apk, "rb") as f:
+            await update.message.reply_document(
+                document=f,
+                filename=f"signed_{doc.file_name}",
+                caption="✅ فایل با موفقیت zipalign و امضا شد."
+            )
 
+        user_last_request[user_id] = now
+        await status.edit_text(f"✅ انجام شد! می‌تونی بعد از {COOLDOWN_SEC//60} دقیقه دوباره فایل بفرستی.")
+
+    except Exception as e:
+        logger.exception("Signing error")
+        try:
+            await status.edit_text(f"❌ خطا: {e}")
+        except Exception:
+            await update.message.reply_text(f"❌ خطا: {e}")
+    finally:
+        try:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+        except Exception:
+            pass
+
+# --------------- main ---------------
 def main():
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.Document.FileExtension("apk"), handle_apk))
-    app.run_polling()
+    application = Application.builder().token(BOT_TOKEN).build()
+    application.add_handler(CommandHandler("start", cmd_start))
+    application.add_handler(CallbackQueryHandler(button_handler))
+    application.add_handler(MessageHandler(filters.Document.FileExtension("apk"), handle_apk))
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logger.info("🚀 Bot is running...")
+    application.run_polling()
 
 if __name__ == "__main__":
     main()
