@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: apk-signer-bot
+    env: python
+    plan: free
+    region: oregon
+    buildCommand: bash setup_android.sh
+    startCommand: python app.py
+    runtime: python
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.7
